@@ -185,14 +185,14 @@ contract ZappermintTokenSale {
      * @return Whether Token Sale is open
      */
     function isOpen() public view returns (bool) {
-        return block.timestamp >= _openingTime && block.timestamp <= _closingTime;
+        return block.timestamp >= _openingTime && block.timestamp <= _closingTime && !_ended;
     }
 
     /**
      * @return Whether Token Sale is closed
      */
     function isClosed() public view returns (bool) {
-        return block.timestamp > _closingTime;
+        return block.timestamp > _closingTime || _ended;
     }
 
     /**
@@ -217,6 +217,7 @@ contract ZappermintTokenSale {
         // Try/catch only works on external function calls. `this.f()` uses a message call instead of a direct jump, 
         //   which is considered external.
         //   https://docs.soliditylang.org/en/v0.7.6/control-structures.html#external-function-calls
+        // Note when ChainLink is broken, this will log an internal `revert` error, but the code will complete successfully
         try this.getChainlinkPrice() returns (uint256 price) {
             return price;
         }
@@ -317,21 +318,21 @@ contract ZappermintTokenSale {
     /**
      * Fallback function to buy ZAPP
      */
-    fallback () external payable whileOpen beforeEnd {
+    fallback () external payable whileOpen {
         buyZAPP();
     }
 
     /**
      * Receive function to buy ZAPP
      */
-    receive() external payable whileOpen beforeEnd {
+    receive() external payable whileOpen {
         buyZAPP();
     }
 
     /**
      * Buy ZAPP. Beneficiary is sender
      */
-    function buyZAPP() public payable whileOpen beforeEnd {
+    function buyZAPP() public payable whileOpen {
         address beneficiary = msg.sender;
 
         // Verify amount of ETH
@@ -347,8 +348,9 @@ contract ZappermintTokenSale {
         _soldZAPP = _soldZAPP.add(zapp);
 
         // Verify that this purchase isn't surpassing the hard cap, otherwise refund exceeding amount 
-        uint256 exceedingZAPP = _soldZAPP - _hardCap;
-        if (exceedingZAPP > 0) {
+        int256 exceeding = int256(_soldZAPP - _hardCap);
+        if (exceeding > 0) {
+            uint256 exceedingZAPP = uint256(exceeding);
             uint256 exceedingETH = calculateETHAmount(exceedingZAPP);
             buyer.addr.transfer(exceedingETH);
 
@@ -371,7 +373,7 @@ contract ZappermintTokenSale {
      * Transfers the contract's wei to a wallet, after Token Sale ended and has reached the soft cap
      * @param wallet address to send wei to
      */
-    function claimETH(address payable wallet) public payable afterEnd aboveSoftCap onlyOwner {
+    function claimETH(address payable wallet) public afterEnd aboveSoftCap onlyOwner {
         // Don't change the `_soldZAPP` here, for potential future reference
         wallet.transfer(address(this).balance);
     }
@@ -402,7 +404,7 @@ contract ZappermintTokenSale {
     /**
      * Lets the buyer claim their ETH, after Token Sale ended and hasn't reached the soft cap
      */
-    function claimRefund() public payable afterEnd belowSoftCap {
+    function claimRefund() public afterEnd belowSoftCap {
         address beneficiary = msg.sender;
 
         // Make sure the sender has bought ZAPP

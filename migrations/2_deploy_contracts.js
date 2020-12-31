@@ -9,7 +9,7 @@ module.exports = async function (deployer, network, accounts) {
     switch (network) {
         case 'development':
             openingTime = (Date.now() / 1000 + 30).toFixed();// Open in 30 seconds after deployment //*/1610647200;
-            closingTime = (Date.now() / 1000 + 300).toFixed();// Close in 5 minutes after deployment //*/1613325600;
+            closingTime = (Date.now() / 1000 + 600).toFixed();// Close in 10 minutes after deployment //*/1613325600;
             softCap = "432"+e18; // 0.03 ETH * 14400 //6000000E18;
             hardCap = "1440"+e18; // 0.1 ETH * 14400 //120000000E18;
             ethPrice = 720E8; // 720 USD -> Rate 14400 ZAPP / ETH
@@ -49,5 +49,8 @@ module.exports = async function (deployer, network, accounts) {
     // Remix: 1610647200","1613325600","6000000000000000000000000","120000000000000000000000000","72000000000","5000000"
 
     await deployer.deploy(ZappermintTokenSale, openingTime, closingTime, softCap, hardCap, ethPrice, zappPrice, aggregator);
+
+    console.log(openingTime);
+    console.log(closingTime);
 
 };
