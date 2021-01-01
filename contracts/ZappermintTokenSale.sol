@@ -37,6 +37,7 @@ contract ZappermintTokenSale {
 
     address private _owner; // Owner of the contract
     bool private _ended; // Whether the Token Sale has ended
+    address private _zappContract; // Zappermint Token Contract
 
 // ----
 // Modifiers
@@ -87,6 +88,14 @@ contract ZappermintTokenSale {
      */
     modifier onlyOwner {
         require(msg.sender == _owner, "Only the owner can do this");
+        _;
+    }
+
+    /**
+     * Only allow function with this modifier to be run by the Zappermint Token Contract
+     */
+    modifier onlyZAPPContract {
+        require(msg.sender == _zappContract, "Only the Zappermint Token Contract can do this");
         _;
     }
 
@@ -311,6 +320,13 @@ contract ZappermintTokenSale {
         _ended = true;
     }
 
+    /**
+     * Sets the address of the Zappermint Token Contract
+     */
+    function setZAPPContract(address zappContract) public onlyOwner {
+        _zappContract = zappContract;
+    }
+
 // ----
 // Transaction functions
 // ----
@@ -379,12 +395,11 @@ contract ZappermintTokenSale {
     }
 
     /**
-     * Lets a buyer claim their ZAPP, after Token Sale ended and has reached the soft cap
+     * Lets a buyer claim their ZAPP through the Zappermint Token Contract, after Token Sale ended and has reached the soft cap
      * @return Amount of ZAPP that have been claimed
      * NOTE The true implementation of this is in the Zappermint Token Contract. 
-     * ! Do not call this function manually, as you will lose your bought ZAPP
      */
-    function claimZAPP() public afterEnd aboveSoftCap returns (uint256) {
+    function claimZAPP() public afterEnd aboveSoftCap onlyZAPPContract returns (uint256) {
         address beneficiary = tx.origin; // Use tx, as msg should point to the Zappermint Token Contract
 
         // Make sure the sender has bought ZAPP
