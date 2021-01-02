@@ -151,8 +151,7 @@ contract ZappermintTokenSale {
      * NOTE Based on ETH/USD pair. 1 ZAPP = 0.05 USD
      */
     function getRate() public view returns (uint256) {
-        uint256 price = getLatestPrice(); // 8 decimals
-        return price.div(_zappPrice);
+        return getLatestPrice().div(_zappPrice); // 8 decimals
     }
 
     /**
@@ -282,16 +281,14 @@ contract ZappermintTokenSale {
      * @return The amount of wei this address has spent
      */
     function getBuyerETH(address addr) public view returns (uint256) {
-        Buyer memory buyer = _buyers[addr];
-        return buyer.eth;
+        return _buyers[addr].eth;
     }
 
     /**
      * @return The amount of ZAPP bits this address has bought
      */
     function getBuyerZAPP(address addr) public view returns (uint256) {
-        Buyer memory buyer = _buyers[addr];
-        return buyer.zapp;
+        return _buyers[addr].zapp;
     }
 
     /**
@@ -359,30 +356,41 @@ contract ZappermintTokenSale {
         Buyer memory buyer = _buyers[beneficiary];
         buyer.addr = msg.sender;
 
+        // Make sure the rate is consistent in this purchase
+        uint256 rate = getRate();
+
         // Calculate the amount of ZAPP to receive and add it to the total sold
-        uint256 zapp = calculateZAPPAmount(eth); 
+        uint256 zapp = _calculateZAPPAmount(eth, rate); 
         _soldZAPP = _soldZAPP.add(zapp);
 
         // Verify that this purchase isn't surpassing the hard cap, otherwise refund exceeding amount 
         int256 exceeding = int256(_soldZAPP - _hardCap);
+        uint256 exceedingZAPP = 0;
+        uint256 exceedingETH = 0;
+        
         if (exceeding > 0) {
-            uint256 exceedingZAPP = uint256(exceeding);
-            uint256 exceedingETH = calculateETHAmount(exceedingZAPP);
-            buyer.addr.transfer(exceedingETH);
-
             // Adjust sold amount and close Token Sale
             _soldZAPP = _hardCap;
             _ended = true;
 
-            // Adjust amount of bought zapp
+            // Adjust amount of bought ZAPP and paid ETH
+            exceedingZAPP = uint256(exceeding);
+            exceedingETH = _calculateETHAmount(exceedingZAPP, rate);
             zapp = zapp.sub(exceedingZAPP);
+            eth = eth.sub(exceedingETH);
         }
 
         // Adjust buyer variables
         buyer.eth = buyer.eth.add(eth);
         buyer.zapp = buyer.zapp.add(zapp);
-        buyer.claimed = false;
+        buyer.claimed = false; // Cannot be true while sale is open, so it's safe to always set this to false here
         _buyers[beneficiary] = buyer;
+
+        // Checks-Effects-Interactions pattern
+        if (exceeding > 0) {
+            // Send the exceeding ETH back
+            buyer.addr.transfer(exceedingETH);
+        }
     }
 
     /**
@@ -404,9 +412,9 @@ contract ZappermintTokenSale {
 
         // Make sure the sender has bought ZAPP
         Buyer memory buyer = _buyers[beneficiary];
-        require(buyer.zapp > 0, "Not a buyer");
-        require(!buyer.claimed, "Already claimed");
         uint256 zapp = buyer.zapp;
+        require(zapp > 0, "Not a buyer");
+        require(!buyer.claimed, "Already claimed");
 
         // Adjust buyer variables
         buyer.claimed = true;
@@ -424,8 +432,8 @@ contract ZappermintTokenSale {
 
         // Make sure the sender has bought ZAPP
         Buyer memory buyer = _buyers[beneficiary];
-        require(buyer.eth > 0, "Not a buyer");
         uint256 eth = buyer.eth;
+        require(eth > 0, "Not a buyer");
 
         // Adjust Token Sale state
         _soldZAPP = _soldZAPP.sub(buyer.zapp);
@@ -437,6 +445,32 @@ contract ZappermintTokenSale {
 
         // Refund the ETH of the buyer
         buyer.addr.transfer(eth);
+    }
+
+// ----
+// Internal functions
+// ----
+
+    /**
+     * Calculate amount of ZAPP for a given amount of wei
+     * @param weiAmount amount of wei
+     * @param rate ZAPP/ETH rate
+     * @return ZAPP bits (18 decimals)
+     * NOTE Internally used as optimization by avoiding multiple Chainlink calls
+     */
+    function _calculateZAPPAmount(uint256 weiAmount, uint256 rate) internal pure returns (uint256) {
+        return weiAmount.mul(rate);
+    }
+
+    /**
+     * Calculate amount of ETH for a given amount of ZAPP bits
+     * @param zappAmount amount of ZAPP bits (18 decimals)
+     * @param rate ZAPP/ETH rate
+     * @return wei
+     * NOTE Internally used as optimization by avoiding multiple Chainlink calls
+     */
+    function _calculateETHAmount(uint256 zappAmount, uint256 rate) internal pure returns (uint256) {
+        return zappAmount.div(rate);
     }
 
 }

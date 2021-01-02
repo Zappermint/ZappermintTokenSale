@@ -17,25 +17,25 @@ module.exports = async function (deployer, network, accounts) {
             closingTime = openingTime + 600;// Close in 10 minutes after opening //*/1613325600;
             softCap = "432"+e18; // 0.03 ETH * 14400 //6000000E18;
             hardCap = "1440"+e18; // 0.1 ETH * 14400 //120000000E18;
-            ethPrice = "720"+e8; // 720 USD -> Rate 14400 ZAPP / ETH
+            ethPrice = "770"+e8; // 720 USD -> Rate 14400 ZAPP / ETH
             zappPrice = "5"+e6; // 0.05 USD
             aggregator = "0x8A753747A1Fa494EC906cE90E9f37563A8AF630e";
             break;
         case 'rinkeby':
-            openingTime = Date.now() / 1000 + 540;// Open in 9 minutes after deployment //*/1610647200;
+            openingTime = Date.now() / 1000 + 300;// Open in 5 minutes after deployment //*/1610647200;
             closingTime = openingTime + 660;// Close in 11 minutes after opening //*/1613325600;
-            softCap = "432"+e18; // 0.03 ETH * 14400 //6000000E18;
-            hardCap = "1440"+e18; // 0.1 ETH * 14400 //120000000E18;
-            ethPrice = "720"+e8; // 720 USD -> Rate 14400 ZAPP / ETH
+            softCap = "183600"+e18; // 0.03 ETH * 14400 //6000000E18;
+            hardCap = "3672000"+e18; // 0.1 ETH * 14400 //120000000E18;
+            ethPrice = "770"+e8; // 720 USD -> Rate 14400 ZAPP / ETH
             zappPrice = "5"+e6; // 0.05 USD
             aggregator = "0x8A753747A1Fa494EC906cE90E9f37563A8AF630e";
             break;
         case 'goerli':
-            openingTime = Date.now() / 1000 + 540;// Open in 9 minutes after deployment //*/1610647200;
+            openingTime = Date.now() / 1000 + 300;// Open in 5 minutes after deployment //*/1610647200;
             closingTime = openingTime + 660;// Close in 11 minutes after opening //*/1613325600;
-            softCap = "432"+e18; // 0.03 ETH * 14400 //6000000E18;
-            hardCap = "1440"+e18; // 0.1 ETH * 14400 //120000000E18;
-            ethPrice = "720"+e8; // 720 USD -> Rate 14400 ZAPP / ETH
+            softCap = "183600"+e18; // 0.03 ETH * 14400 //6000000E18;
+            hardCap = "3672000"+e18; // 0.1 ETH * 14400 //120000000E18;
+            ethPrice = "770"+e8; // 720 USD -> Rate 14400 ZAPP / ETH
             zappPrice = "5"+e6; // 0.05 USD
             aggregator = "0x0000000000000000000000000000000000000000";
             break;
@@ -44,7 +44,7 @@ module.exports = async function (deployer, network, accounts) {
             closingTime = 1613325600; // Feb 14, 2021, 06:00:00PM UTC
             softCap = "6000000"+e18;
             hardCap = "120000000"+e18;
-            ethPrice = "720"+e8; // 720 USD -> Rate 14400 ZAPP / ETH
+            ethPrice = "770"+e8; // 720 USD -> Rate 14400 ZAPP / ETH
             zappPrice = "5"+e6; // 0.05 USD
             aggregator = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
             break;
