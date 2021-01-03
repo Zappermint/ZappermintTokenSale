@@ -292,6 +292,20 @@ contract ZappermintTokenSale {
     }
 
     /**
+     * @return Whether this address has claimed their ZAPP
+     */
+    function hasBuyerClaimed(address addr) public view returns (bool) {
+        return _buyers[addr].claimed;
+    }
+
+    /**
+     * @return The Zappermint Token Contract address
+     */
+    function getZAPPContract() public view returns (address) {
+        return _zappContract;
+    }
+
+    /**
      * @return The owner of the Token Sale Contract
      */
     function getOwner() public view returns (address) {
@@ -319,9 +333,18 @@ contract ZappermintTokenSale {
 
     /**
      * Sets the address of the Zappermint Token Contract
+     * @param zappContract address of the Zappermint Token Contract
      */
     function setZAPPContract(address zappContract) public onlyOwner {
         _zappContract = zappContract;
+    }
+
+    /**
+     * Transfers ownership
+     * @param newOwner address of the new owner
+     */
+    function changeOwner(address newOwner) public onlyOwner {
+        _owner = newOwner;
     }
 
 // ----
