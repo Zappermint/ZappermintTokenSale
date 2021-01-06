@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 // Source: https://github.com/smartcontractkit/chainlink/blob/develop/evm-contracts/src/v0.6/interfaces/AggregatorV3Interface.sol
-pragma solidity ^0.7.6;
+pragma solidity >=0.6.0;
 
 interface AggregatorV3Interface {
 

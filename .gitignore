@@ -67,3 +67,6 @@ secrets.json
 
 #remix test files
 remix/
+
+#backups
+backups/
