@@ -473,13 +473,20 @@ contract ZappermintTokenSale {
     /**
      * @param addr address to get reward of
      * @return The total amount of ZAPP bits this address will get as bonus (18 decimals)
+     * NOTE Hunter and referrer rank rewards only added when claimable
      */
     function getWalletTotalBonus(address addr) public view returns (uint256) {
-        return getEarlyAdopterBonus(addr)
+        uint256 total = getEarlyAdopterBonus(addr)
             .add(getReferrerBonus(addr))
-            .add(getRefereeBonus(addr))
-            .add(getHunterBonus(addr))
-            .add(getReferrerRankReward(addr));
+            .add(getRefereeBonus(addr));
+        
+        if (isClaimable()) {
+            total.add(getHunterBonus(addr))
+                .add(getReferrerRankReward(addr));
+        }
+        
+        return total;
+        
     }
 
     /**
@@ -520,6 +527,8 @@ contract ZappermintTokenSale {
     function getReferrerRank(address addr) public view returns (uint256) {
         // Non-referrers don't have a rank
         if (!_wallets[addr].isReferrer) return 0;
+        // Must have at least one referral
+        if (_wallets[addr].referrer.referrals.length == 0) return 0;
 
         // Start at rank 1
         uint256 rank = 1;
