@@ -3,56 +3,58 @@ pragma solidity ^0.7.6;
 
 import './SafeMath.sol';
 import './AggregatorV3Interface.sol';
+import './Wallet.sol';
 
 // Crowdsale contract for ZAPP. Functionalities:
 // - Timed: opens Jan 14, 2021, 6:00:00PM UTC (1610647200) and closes Feb 14, 2021, 6:00:00PM UTC (1613325600)
 // - Capped: soft cap of 6M ZAPP, hard cap of 120M ZAPP
 // - Refundable: ETH can be refunded if soft cap hasn't been reached
 // - Post Delivery: ZAPP can be claimed after Token Sale end, if soft cap has been reached
-// - Bonus Time: Bonus ZAPP for a set duration
+// - Early Adopter: Bonus ZAPP for a set duration
 // - Referral System: Bonus ZAPP when buying with referral link
 contract ZappermintTokenSale {
     using SafeMath for uint256; // Avoid overflow issues
-
-// ----
-// Structs
-// ----
-
-    struct Buyer {
-        address payable addr;
-        uint256 eth;
-        uint256 zapp;
-        uint256 bonus;
-        uint256[] referrals;
-        bytes3 code;
-        bool claimed;
-    }
+    using WalletInterface for Wallet; // Wallet functionality
 
 // ----
 // Variables
 // ----
 
+    // Token Sale configuration
     uint256 private _openingTime; // Start of Token Sale
     uint256 private _closingTime; // End of Token Sale
+    uint256 private _claimTime; // Claim opening time
     uint256 private _softCap; // Minimum amount of ZAPP to sell (18 decimals)
     uint256 private _hardCap; // Maximum amount of ZAPP to sell (18 decimals)
     uint256 private _ethPrice; // Fallback ETH/USD price in case ChainLink breaks (8 decimals)
     uint256 private _zappPrice; // ZAPP/USD price (8 decimals)
+    address private _zappContract; // Zappermint Token Contract
+    address private _owner; // Owner of the contract
+    
+    // Wallets
+    mapping(address => Wallet) private _wallets; // Addresses that have interacted with the Token Sale
+    address[] _walletKeys; // Address list, for iterating over `_wallets`
+
+    // Early Adopters
+    uint256 private _earlyAdoptionEndTime; // End of early adoption bonus
+    uint256 private _earlyAdoptionBonus; // Percentage of purchase to receive as bonus (8 decimals)
+
+    // Referrals
     uint256 private _referrerMin; // Referrer minimum ZAPP bits (18 decimals)
     uint256 private _refereeMin; // Referee minimum ZAPP bits (18 decimals)
     uint256 private _referralBonus; // Percentage of purchase to receive as bonus (8 decimals)
-    uint256 private _bonusEndTime; // End of limited-time bonus
-
-
-    mapping(address => Buyer) private _buyers; // Addresses that have bought ZAPP
-    address[] _buyerKeys; // Address list, for iterating over `_buyers`
+    uint256[5] private _rankRewards; // Referrer rank reward list
     mapping(bytes3 => address) private _codes; // Referral codes
+    
+    // Bounty Hunters
+    address[] _hunters; // Hunter list
+    uint256 private _maxHunters; // Maximum amount of bounty hunters
 
+    // Token Sale progress
     uint256 private _soldZAPP; // Amount of ZAPP sold (18 decimals)
     bool private _ended; // Whether the Token Sale has ended
 
-    address private _owner; // Owner of the contract
-    address private _zappContract; // Zappermint Token Contract
+    // Third party
     AggregatorV3Interface private _priceFeed; // ChainLink ETH/USD Price Feed
 
 // ----
@@ -64,6 +66,14 @@ contract ZappermintTokenSale {
      */
     modifier whileOpen {
         require(isOpen(), "Token Sale not open");
+        _;
+    }
+
+    /**
+     * Only allow function with this modifier to run while the claims are open
+     */
+    modifier whileClaimable {
+        require(isClaimable(), "ZAPP can't be claimed yet");
         _;
     }
 
@@ -100,18 +110,18 @@ contract ZappermintTokenSale {
     }
 
     /**
-     * Only allow function with this modifier to be run by the owner
-     */
-    modifier onlyOwner {
-        require(msg.sender == _owner, "Only the owner can do this");
-        _;
-    }
-
-    /**
      * Only allow function with this modifier to be run by the Zappermint Token Contract
      */
     modifier onlyZAPPContract {
         require(msg.sender == _zappContract, "Only the Zappermint Token Contract can do this");
+        _;
+    }
+
+    /**
+     * Only allow function with this modifier to be run by the owner
+     */
+    modifier onlyOwner {
+        require(msg.sender == _owner, "Only the owner can do this");
         _;
     }
 
@@ -123,6 +133,7 @@ contract ZappermintTokenSale {
      * @dev Constructor of the Token Sale. Sets the wallet, time and caps
      * @param openingTime start time of the Token Sale (epoch)
      * @param closingTime end time of the Token Sale (epoch)
+     * @param claimTime claim opening time (epoch)
      * @param softCap minimum amount of ZAPP to sell (18 decimals)
      * @param hardCap maximum amount of ZAPP to sell (18 decimals)
      * @param ethPrice price of 1 ETH in USD (8 decimals) to use in case ChainLink breaks
@@ -130,14 +141,18 @@ contract ZappermintTokenSale {
      * @param referrerMin minimum amount of ZAPP referrer must have purchased before getting a referral link (18 decimals)
      * @param refereeMin minimum amount of ZAPP referee must purchase to get referral bonus (18 decimals)
      * @param referralBonus percentage of purchase to receive as bonus (8 decimals)
-     * @param bonusEndTime end of limited-time bonus
+     * @param rankRewards referrer rank reward list
+     * @param earlyAdoptionEndTime end of early adoption bonus
+     * @param earlyAdoptionBonus percentage of purchase to receive as bonus (8 decimals)
+     * @param maxHunters maximum amount of bounty hunters
      * @param aggregator address of ChainLink Aggregator price feed
      * NOTE The Zappermint Token Contract is still in the works, which is why it's not mentioned in this contract.
-     *      The Token Contract will allow to claim ZAPP according to the `_buyers` mapping.
+     *      The Token Contract will allow to claim ZAPP according to the `_wallets` mapping.
      */
     constructor(
         uint256 openingTime, 
         uint256 closingTime, 
+        uint256 claimTime,
         uint256 softCap, 
         uint256 hardCap,
         uint256 ethPrice,
@@ -145,15 +160,20 @@ contract ZappermintTokenSale {
         uint256 referrerMin,
         uint256 refereeMin,
         uint256 referralBonus,
-        uint256 bonusEndTime,
+        uint256[5] memory rankRewards,
+        uint256 earlyAdoptionEndTime,
+        uint256 earlyAdoptionBonus,
+        uint256 maxHunters,
         address aggregator
     ) {
         require(openingTime >= block.timestamp, "Opening time is before current time");
         require(closingTime > openingTime, "Opening time is not before closing time");
+        require(claimTime >= closingTime, "Claiming time is not after closing time");
         require(softCap < hardCap, "Hard cap is below soft cap");
 
         _openingTime = openingTime;
         _closingTime = closingTime;
+        _claimTime = claimTime;
         _softCap = softCap;
         _hardCap = hardCap;
         _ethPrice = ethPrice;
@@ -161,22 +181,18 @@ contract ZappermintTokenSale {
         _referrerMin = referrerMin;
         _refereeMin = refereeMin;
         _referralBonus = referralBonus;
-        _bonusEndTime = bonusEndTime;
+        _rankRewards = rankRewards;
+        _earlyAdoptionEndTime = earlyAdoptionEndTime;
+        _earlyAdoptionBonus = earlyAdoptionBonus;
+        _maxHunters = maxHunters;
         _priceFeed = AggregatorV3Interface(aggregator);
+
         _owner = msg.sender;
     }
 
 // ----
 // Getters
 // ----
-
-    /**
-     * @return The current number of ZAPP a buyer gets per 1 ETH
-     * NOTE Based on ETH/USD pair. 1 ZAPP = 0.05 USD
-     */
-    function getRate() public view returns (uint256) {
-        return getLatestPrice().div(_zappPrice); // 8 decimals
-    }
 
     /**
      * @return Token Sale opening time
@@ -186,38 +202,17 @@ contract ZappermintTokenSale {
     }
 
     /**
-     * @return Token Sale closing time
-     */
-    function getClosingTime() public view returns (uint256) {
-        return _closingTime;
-    }
-
-    /**
-     * @return The minimum amount of ZAPP to sell (18 decimals)
-     */
-    function getSoftCap() public view returns (uint256) {
-        return _softCap;
-    }
-
-    /**
-     * @return The maximum amount of ZAPP to sell (18 decimals)
-     */
-    function getHardCap() public view returns (uint256) {
-        return _hardCap;
-    }
-
-    /**
-     * @return The total amount of ZAPP sold so far (18 decimals)
-     */
-    function getSoldZAPP() public view returns (uint256) {
-        return _soldZAPP;    
-    }
-
-    /**
      * @return Whether Token Sale is open
      */
     function isOpen() public view returns (bool) {
         return block.timestamp >= _openingTime && block.timestamp <= _closingTime && !_ended;
+    }    
+
+    /**
+     * @return Token Sale closing time
+     */
+    function getClosingTime() public view returns (uint256) {
+        return _closingTime;
     }
 
     /**
@@ -228,10 +223,52 @@ contract ZappermintTokenSale {
     }
 
     /**
+     * @return Early adoption end time
+     */
+    function getEarlyAdoptionEndTime() public view returns (uint256) {
+        return _earlyAdoptionEndTime;
+    }
+
+    /**
+     * @return Whether the early adoption is active
+     */
+    function isEarlyAdoptionActive() public view returns (bool) {
+        return block.timestamp <= _earlyAdoptionEndTime;
+    }
+
+    /**
+     * @return The claim opening time
+     */
+    function getClaimTime() public view returns (uint256) {
+        return _claimTime;
+    }
+
+    /**
+     * @return Whether the ZAPP can be claimed
+     */
+    function isClaimable() public view returns (bool) {
+        return block.timestamp >= _claimTime && _ended;
+    }
+
+    /**
+     * @return The minimum amount of ZAPP to sell (18 decimals)
+     */
+    function getSoftCap() public view returns (uint256) {
+        return _softCap;
+    }
+
+    /**
      * @return Whether the soft cap has been reached
      */
     function isSoftCapReached() public view returns (bool) {
         return _soldZAPP >= _softCap;
+    }
+
+    /**
+     * @return The maximum amount of ZAPP to sell (18 decimals)
+     */
+    function getHardCap() public view returns (uint256) {
+        return _hardCap;
     }
 
     /** 
@@ -239,6 +276,21 @@ contract ZappermintTokenSale {
      */
     function isHardCapReached() public view returns (bool) {
         return _soldZAPP >= _hardCap;
+    }
+
+    /**
+     * @return The total amount of ZAPP sold so far (18 decimals)
+     */
+    function getSoldZAPP() public view returns (uint256) {
+        return _soldZAPP;    
+    }
+
+    /**
+     * @return The current number of ZAPP a buyer gets per 1 ETH
+     * NOTE Based on ETH/USD pair. 1 ZAPP = 0.05 USD
+     */
+    function getRate() public view returns (uint256) {
+        return getLatestPrice().div(_zappPrice); // 8 decimals
     }
 
     /**
@@ -284,43 +336,6 @@ contract ZappermintTokenSale {
     }
 
     /**
-     * Calculate amount of ZAPP for a given amount of wei
-     * @param weiAmount amount of wei (18 decimals)
-     * @return ZAPP
-     */
-    function calculateZAPPAmount(uint256 weiAmount) public view returns (uint256) {
-        return weiAmount.mul(getRate());
-    }
-
-    /**
-     * Calculate amount of ETH for a given amount of ZAPP bits
-     * @param zappAmount amount of ZAPP bits (18 decimals)
-     * @return Wei
-     */
-    function calculateETHAmount(uint256 zappAmount) public view returns (uint256) {
-        return zappAmount.div(getRate());
-    }
-
-    /**
-     * Calculates bonus amount without referral code
-     * @param zappAmount amount of ZAPP bits bought (18 decimals)
-     * @return Amount of bonus ZAPP bits (18 decimals)
-     */
-    function calculateBonusAmount(uint256 zappAmount) public view returns (uint256) {
-        return _calculateBonusAmount(zappAmount, false);
-    }
-
-    /**
-     * Calculates bonus amount with referral code
-     * @param zappAmount amount of ZAPP bits bought (18 decimals)
-     * @return Amount of bonus ZAPP bits (18 decimals)
-     */
-    function calculateBonusAmountWithCode(uint256 zappAmount, bytes3 code) public view returns (uint256) {
-        if (!isReferralCodeValid(code)) return 0;
-        return _calculateBonusAmount(zappAmount, true);
-    }
-
-    /**
      * @return Minimum amount of ZAPP a referrer must have bought to get a referral link (18 decimals)
      */
     function getReferrerMin() public view returns (uint256) {
@@ -345,8 +360,7 @@ contract ZappermintTokenSale {
      * @return The referral code for this address
      */
     function getReferralCode() public view returns (bytes3) {
-        require(_buyers[msg.sender].zapp >= _referrerMin, "You haven't bought enough ZAPP to be eligible for referrals");
-        return _buyers[msg.sender].code;
+        return _wallets[msg.sender].referrer.code;
     }
 
     /**
@@ -357,15 +371,43 @@ contract ZappermintTokenSale {
         return _codes[code] != address(0) && _codes[code] != msg.sender;
     }
 
-    function isBonusTime() public view returns (bool) {
-        return block.timestamp <= _bonusEndTime;
+    /**
+     * @return The referral rank reward list
+     */
+    function getRankRewards() public view returns (uint256[5] memory) {
+        return _rankRewards;
     }
 
     /**
-     * @return End time of limited-time bonus
+     * @return The amount of registered Bounty Hunters
      */
-    function getBonusEndTime() public view returns (uint256) {
-        return _bonusEndTime;
+    function getHunters() public view returns (uint256) {
+        return _hunters.length;
+    }
+
+    /**
+     * @return The maximum number of Bounty Hunters that can register
+     */
+    function getMaxHunters() public view returns (uint256) {
+        return _maxHunters;
+    }
+
+    /**
+     * @return Whether Bounty Hunters can still register
+     */
+    function canRegister() public view returns (bool) {
+        return getHunters() < getMaxHunters();
+    }
+
+    /**
+     * @param addr address to check
+     * @return Whether the address is a registered bounty hunter 
+     */
+    function isHunter(address addr) public view returns (bool) {
+        for (uint256 i = 0; i < _hunters.length; ++i) {
+            if (_hunters[i] == addr) return true;
+        }
+        return false;
     }
 
     /**
@@ -373,7 +415,7 @@ contract ZappermintTokenSale {
      * @return The amount of wei this address has spent (18 decimals)
      */
     function getBuyerETH(address addr) public view returns (uint256) {
-        return _buyers[addr].eth;
+        return _wallets[addr].buyer.eth;
     }
 
     /**
@@ -381,47 +423,141 @@ contract ZappermintTokenSale {
      * @return The amount of ZAPP bits this address has bought (18 decimals)
      */
     function getBuyerZAPP(address addr) public view returns (uint256) {
-        return _buyers[addr].zapp;
+        return _wallets[addr].buyer.zapp;
     }
 
     /**
      * @param addr address to get bonus of
-     * @return The total bonus ZAPP the buyer will receive (18 decimals)
+     * @return The amount of ZAPP bits this address will get as early adopter bonus (18 decimals)
      */
-    function getBuyerBonus(address addr) public view returns (uint256) {
-        return _buyers[addr].bonus;
+    function getEarlyAdopterBonus(address addr) public view returns (uint256) {
+        return _wallets[addr].getEarlyAdopterBonus(_referralBonus);
     }
 
     /**
-     * @param addr address to get referrals of
-     * @return The list of successful referrals of the buyer
+     * @param addr address to get bonus of
+     * @return The amount of ZAPP bits this address will get as referrer bonus (18 decimals)
      */
-    function getBuyerReferrals(address addr) public view returns (uint256[] memory) {
-        return _buyers[addr].referrals;
+    function getReferrerBonus(address addr) public  view returns (uint256) {
+        return _wallets[addr].getReferrerBonus(_referralBonus, _referrerMin, isClaimable());
+    }
+
+    /**
+     * @param addr address to get bonus of
+     * @return The amount of ZAPP bits this address will receive as bonus for his purchase(s) (18 decimals)
+     */
+    function getRefereeBonus(address addr) public view returns (uint256) {
+        return _wallets[addr].getRefereeBonus(_referralBonus);
+    }
+
+    /**
+     * @param addr address to get bonus of
+     * @return The amount of ZAPP bits this address will receive as bonus for his bounty campaign (18 decimals)
+     */
+    function getHunterBonus(address addr) public view returns (uint256) {
+        return _wallets[addr].getHunterBonus(isClaimable());
+    }
+
+    /**
+     * @param addr address to get reward of
+     * @return The amount of ZAPP bits this address will be rewarded with for referrer rank (18 decimals)
+     */
+    function getReferrerRankReward(address addr) public view returns (uint256) {
+        uint256 rank = getReferrerRank(addr);
+        if (rank == 0) return 0;
+        --rank;
+        if (rank < _rankRewards.length) return _rankRewards[rank];
+        return 0;
+    }
+
+    /**
+     * @param addr address to get reward of
+     * @return The total amount of ZAPP bits this address will get as bonus (18 decimals)
+     */
+    function getWalletTotalBonus(address addr) public view returns (uint256) {
+        return getEarlyAdopterBonus(addr)
+            .add(getReferrerBonus(addr))
+            .add(getRefereeBonus(addr))
+            .add(getHunterBonus(addr))
+            .add(getReferrerRankReward(addr));
+    }
+
+    /**
+     * @param addr address to get ZAPP of
+     * @return The total amount of ZAPP bits this address can claim (18 decimals)
+     */
+    function getWalletTotalZAPP(address addr) public view returns (uint256) {
+        return getBuyerZAPP(addr)
+            .add(getWalletTotalBonus(addr));
     }
 
     /**
      * @param addr address to get claimed state of
      * @return Whether this address has claimed their ZAPP
      */
-    function hasBuyerClaimed(address addr) public view returns (bool) {
-        return _buyers[addr].claimed;
+    function hasWalletClaimed(address addr) public view returns (bool) {
+        return _wallets[addr].claimed;
+    }
+
+    /**
+     * @param addr address to get referrals of
+     * @return The list of successful referrals of the referrer
+     */
+    function getReferrals(address addr) public view returns (uint256[] memory) {
+        uint256 length = _wallets[addr].referrer.referrals.length;
+        uint256[] memory referrals = new uint256[](length);
+        for (uint256 i = 0; i < length; ++i) {
+            referrals[i] = _wallets[addr].referrer.referrals[i].zapp;
+        }
+        return referrals;
+    }
+
+    /**
+     * Get the ranking position of the referrer
+     * @param addr referrer address
+     * @return The one-based rank of the referrer. 0 if not a referrer
+     */
+    function getReferrerRank(address addr) public view returns (uint256) {
+        // Non-referrers don't have a rank
+        if (!_wallets[addr].isReferrer) return 0;
+
+        // Start at rank 1
+        uint256 rank = 1;
+        uint256 amount1 = _wallets[addr].calculateReferredAmount(_referrerMin, isClaimable());
+
+        // Find every referrer with a higher referral sum
+        for (uint256 key = 0; key < _walletKeys.length; ++key) {
+            // Skip self
+            if (addr == _walletKeys[key]) continue;
+
+            // Skip non-referrers
+            if (!_wallets[_walletKeys[key]].isReferrer) continue;
+            
+            uint256 amount2 = _wallets[addr].calculateReferredAmount(_referrerMin, isClaimable());
+            
+            // Increase the rank if another referrer has a higher sum
+            if (amount2 > amount1) ++rank;
+            // Increase the rank if another referrer has same amount but earlier time
+            else if (amount2 == amount1 && _wallets[_walletKeys[key]].referrer.time < _wallets[addr].referrer.time) ++rank;
+        }
+        return rank;
     }
 
     /**
      * Get the top 5 referrers
      * @return The array of referred amounts of the top 5 referrers
+     * NOTE This can vary depending on the isClaimable state
      */
     function getTopReferrers() public view returns (uint256[5] memory) {
         uint256[5] memory top = [uint256(0), uint256(0), uint256(0), uint256(0), uint256(0)];
-        for (uint256 b = 0; b < _buyerKeys.length; ++b) {
-            uint256 sum = _calculateBuyerReferralSum(_buyerKeys[b]);
+        for (uint256 key = 0; key < _walletKeys.length; ++key) {
+            uint256 amount = _wallets[_walletKeys[key]].calculateReferredAmount(_referrerMin, isClaimable());
             for (uint256 t = 0; t < top.length; ++t) {
-                if (sum > top[t]) {
+                if (amount > top[t]) {
                     for (uint256 i = 4; i > t; --i) {
                         top[i] = top[i - 1];
                     }
-                    top[t] = sum;
+                    top[t] = amount;
                     break;
                 }
             }
@@ -444,15 +580,45 @@ contract ZappermintTokenSale {
     }
 
 // ----
+// Currency helpers
+// ----
+
+    /**
+     * Calculate amount of ZAPP for a given amount of wei
+     * @param weiAmount amount of wei (18 decimals)
+     * @return ZAPP
+     */
+    function calculateZAPPAmount(uint256 weiAmount) public view returns (uint256) {
+        return weiAmount.mul(getRate());
+    }
+
+    /**
+     * Calculate amount of ETH for a given amount of ZAPP bits
+     * @param zappAmount amount of ZAPP bits (18 decimals)
+     * @return Wei
+     */
+    function calculateETHAmount(uint256 zappAmount) public view returns (uint256) {
+        return zappAmount.div(getRate());
+    }
+
+// ----
 // Setters
 // ----
 
     /**
      * Changes the ETH price in case ChainLink breaks
-     * @param price Price of 1 ETH in USD (8 decimals)
+     * @param price price of 1 ETH in USD (8 decimals)
      */
     function setETHPrice(uint256 price) public beforeEnd onlyOwner {
         _ethPrice = price;
+    }
+
+    /**
+     * Changes the max amount of Bounty Hunters that can register
+     * @param max new max amount
+     */
+    function setMaxHunters(uint256 max) public beforeEnd onlyOwner {
+        _maxHunters = max;
     }
 
     /**
@@ -501,18 +667,41 @@ contract ZappermintTokenSale {
      */
     function buyZAPP() public payable whileOpen {
         uint256 zapp = _buyZAPP(msg.sender, msg.value);
-        _assignBonuses(msg.sender, zapp);
-        _getReferralCode(msg.sender);
+        _assignBonuses(msg.sender, zapp, bytes3(0));
     }
 
     /**
      * Buy ZAPP with referral code
-     * @param referralCode used referral code
+     * @param code used referral code
      */
-    function buyZAPPWithCode(bytes3 referralCode) public payable whileOpen {
+    function buyZAPPWithCode(bytes3 code) public payable whileOpen {
         uint256 zapp = _buyZAPP(msg.sender, msg.value);
-        _assignBonusesWithCode(msg.sender, referralCode, zapp);
-        _getReferralCode(msg.sender);
+        _assignBonuses(msg.sender, zapp, code);
+    }
+
+    /**
+     * Register as bounty hunter
+     * NOTE This generates a code for the address, disregarding the bought zapp amount
+     */
+    function registerHunter() public beforeEnd {
+        require(canRegister(), "Maximum amount of Bounty Hunters has been reached");
+        
+        _wallets[msg.sender].register(_codes);
+        _hunters.push(msg.sender);
+    }
+
+    /**
+     * Verifies bounty hunters and their collected bounty rewards
+     * @param hunters list of bounty hunters
+     * @param verified list of verified statuses
+     * @param bonuses list of bounty rewards (18 decimals)
+     * NOTE Lists need to be of same length
+     */
+    function verifyHunters(address[] memory hunters, bool[] memory verified, uint256[] memory bonuses) public afterEnd aboveSoftCap onlyOwner {
+        require(hunters.length == verified.length && hunters.length == bonuses.length, "Data length mismatch");
+        for (uint256 i = 0; i < hunters.length; ++i) {
+            _wallets[hunters[i]].hunt(verified[i], bonuses[i]);
+        }
     }
 
     /**
@@ -520,29 +709,26 @@ contract ZappermintTokenSale {
      * @param wallet address to send wei to
      */
     function claimETH(address payable wallet) public afterEnd aboveSoftCap onlyOwner {
-        // Don't change the `_soldZAPP` here, for potential future reference
         wallet.transfer(address(this).balance);
     }
 
     /**
-     * Lets a buyer claim their ZAPP through the Zappermint Token Contract, after Token Sale ended and has reached the soft cap
-     * @return Amount of ZAPP that have been claimed, Bonus ZAPP
-     * NOTE The true implementation of this is in the Zappermint Token Contract. 
+     * Lets a wallet claim their ZAPP through the Zappermint Token Contract, after claim opening time 
+     *   and if token sale has reached the soft cap
+     * @return Amount of bought ZAPP and amount of bonus ZAPP
+     * NOTE The payout implementation of this can be found in the Zappermint Token Contract
      */
-    function claimZAPP() public afterEnd aboveSoftCap onlyZAPPContract returns (uint256, uint256) {
+    function claimZAPP() public whileClaimable afterEnd aboveSoftCap onlyZAPPContract returns (uint256, uint256) {
         address beneficiary = tx.origin; // Use tx, as msg points to the Zappermint Token Contract
 
-        // Make sure the sender has bought ZAPP
-        Buyer storage buyer = _buyers[beneficiary];
-        uint256 zapp = buyer.zapp;
-        uint256 bonus = buyer.bonus;
-        require(zapp > 0, "Not a buyer");
-        require(!buyer.claimed, "Already claimed");
+        require (!hasWalletClaimed(beneficiary), "Already claimed");
+        uint256 zapp = getWalletTotalZAPP(beneficiary);
+        uint256 bonus = getWalletTotalBonus(beneficiary);
 
-        // Adjust buyer variables
-        buyer.claimed = true;
+        // Adjust claimed state
+        _wallets[beneficiary].claimed = true;
 
-        // Return amount of ZAPP and bonus of the buyer
+        // Return amount of ZAPP and bonus of the wallet
         // NOTE Returned separately so the Token Contract can send the ZAPP from the correct pools
         return (zapp, bonus);
     }
@@ -553,20 +739,17 @@ contract ZappermintTokenSale {
     function claimRefund() public afterEnd belowSoftCap {
         address beneficiary = msg.sender;
 
-        // Make sure the sender has bought ZAPP
-        Buyer storage buyer = _buyers[beneficiary];
-        uint256 eth = buyer.eth;
-        require(eth > 0, "Not a buyer");
+        require(_wallets[beneficiary].isBuyer, "Not a buyer");
+        require(!_wallets[beneficiary].claimed, "Already claimed");
 
         // Adjust Token Sale state
-        _soldZAPP = _soldZAPP.sub(buyer.zapp);
+        _soldZAPP = _soldZAPP.sub(getBuyerZAPP(beneficiary));
 
-        // Adjust buyer variables
-        buyer.eth = 0;
-        buyer.zapp = 0;
+        // Adjust claimed state
+        _wallets[beneficiary].claimed = true;
 
         // Refund the ETH of the buyer
-        buyer.addr.transfer(eth);
+        _wallets[beneficiary].addr.transfer(getBuyerETH(beneficiary));
     }
 
 // ----
@@ -596,23 +779,6 @@ contract ZappermintTokenSale {
     }
 
     /**
-     * Calculates amount of bonus ZAPP to receive
-     * @param zappAmount amount of bought ZAPP bits (18 decimals)
-     * @param hasCode whether a referral code was given
-     * @return The amount of bonus ZAPP bits (18 decimals)
-     */
-    function _calculateBonusAmount(uint256 zappAmount, bool hasCode) internal view returns (uint256) {
-        uint256 amount = zappAmount.mul(_referralBonus).div(10000000000);
-        
-        // During bonus time, always give bonus
-        if (isBonusTime()) return amount;
-        
-        // After bonus time, only give bonus when using code and buying enough ZAPP
-        if (hasCode && zappAmount >= _refereeMin) return amount;
-        return 0;
-    }
-
-    /**
      * Buys ZAPP
      * @param beneficiary address of buyer
      * @param eth amount of ETH sent
@@ -622,14 +788,10 @@ contract ZappermintTokenSale {
         // Verify amount of ETH
         require(eth > 0, "Not enough ETH");
 
-        // Get the buyer by address
-        Buyer storage buyer = _buyers[beneficiary];
-        
-        // If first purchase, this buyer's address will be the zero address.
-        // In that case, add the buyer and its key for iteration
-        if (buyer.addr == address(0)) { 
-            buyer.addr = payable(beneficiary);
-            _buyerKeys.push(beneficiary);
+        // First purchase
+        if (_wallets[beneficiary].addr == address(0)) {
+            _wallets[beneficiary].addr = payable(beneficiary);
+            _walletKeys.push(beneficiary);
         }
 
         // Make sure the rate is consistent in this purchase
@@ -643,7 +805,6 @@ contract ZappermintTokenSale {
         int256 exceeding = int256(_soldZAPP - _hardCap);
         uint256 exceedingZAPP = 0;
         uint256 exceedingETH = 0;
-        
         if (exceeding > 0) {
             // Adjust sold amount and close Token Sale
             _soldZAPP = _hardCap;
@@ -656,123 +817,41 @@ contract ZappermintTokenSale {
             eth = eth.sub(exceedingETH);
         }
 
-        // Adjust buyer variables
-        buyer.eth = buyer.eth.add(eth);
-        buyer.zapp = buyer.zapp.add(zapp);
-        buyer.claimed = false; // Cannot be true while sale is open, so it's safe to always set this to false here
+        // Adjust the buyer
+        _wallets[beneficiary].purchase(eth, zapp);
 
-        // Checks-Effects-Interactions pattern
-        if (exceeding > 0) {
-            // Send the exceeding ETH back
-            buyer.addr.transfer(exceedingETH);
+        // Purchase adds total bought ZAPP to more than referrer minimum
+        if (!_wallets[beneficiary].isReferrer && _wallets[beneficiary].buyer.zapp >= _referrerMin) {
+            _wallets[beneficiary].isReferrer = true;
+            _wallets[beneficiary].generateReferralCode(_codes);
         }
+
+        // Refund the exceeding ETH
+        // NOTE Checks-Effects-Interactions pattern
+        if (exceeding > 0) _wallets[beneficiary].addr.transfer(exceedingETH);
 
         return zapp;
     }
 
     /**
-     * Assigns limited-time bonus ZAPP to buyer without referral code
-     * @param addr address of buyer
-     * @param zapp amount of ZAPP purchased
+     * Assigns all active bonuses for a purchase
+     * @param beneficiary address of the buyer
+     * @param zapp amount of ZAPP bits purchased (18 decimals)
+     * @param code used referral code (set to 0 if no code used)
      */
-    function _assignBonuses(address addr, uint256 zapp) internal {
-        // Bonus percentage of this purchase
-        uint256 bonus = calculateBonusAmount(zapp);
-        if (bonus == 0) return;
-
-        // Find buyer
-        Buyer storage buyer = _buyers[addr];
-        
-        // Assign bonus
-        buyer.bonus = buyer.bonus.add(bonus);
-    }
-
-    /**
-     * Assigns bonus ZAPP to referrer and referee
-     * @param addr address of referee
-     * @param code used referral code
-     * @param zapp amount of ZAPP purchased
-     */
-    function _assignBonusesWithCode(address addr, bytes3 code, uint256 zapp) internal {
-        // Make sure code is valid
-        require(isReferralCodeValid(code), "Invalid referral code");
-
-        // Bonus percentage of this purchase
-        uint256 bonus = calculateBonusAmountWithCode(zapp, code);
-        if (bonus == 0) return;
-
-        // Find involved buyers
-        Buyer storage referee = _buyers[addr];
-        Buyer storage referrer = _buyers[_codes[code]];
-        
-        // Assign bonuses
-        referee.bonus = referee.bonus.add(bonus);
-        referrer.bonus = referrer.bonus.add(bonus);
-
-        // Add full purchase to referral list
-        referrer.referrals.push(zapp);
-    }
-
-    /**
-     * Finds a new code to assign
-     * @param addr address of buyer
-     * @return Unique referral code
-     */
-    function _getReferralCode(address addr) internal returns (bytes3) {
-        Buyer storage buyer = _buyers[addr];
-        
-        // Only create the code once
-        if (buyer.code != bytes3(0)) return buyer.code;
-
-        // Make sure buyer has bought enough ZAPP
-        if (buyer.zapp < _referrerMin) return "";
-
-        // Find a unique referral code that is not 0x000000
-        // NOTE The loop can be very expensive if many collisions occur. The chances of this happening are very slim though
-        bytes memory enc = abi.encodePacked(addr);
-        bytes3 code = "";
-        while (true) {
-            bytes32 h = keccak256(enc);
-            code = _keccak256ToReferralCode(h);
-            if (code != bytes3(0) && _codes[code] == address(0)) {
-                _codes[code] = addr;
-                break;
+    function _assignBonuses(address beneficiary, uint256 zapp, bytes3 code) internal {
+        // Referral bonus if code is valid and purchased enough ZAPP
+        if (isReferralCodeValid(code)) {
+            if (zapp >= _refereeMin) {
+                _wallets[beneficiary].referral(zapp, _wallets[_codes[code]]);
             }
-            // If the code already exists, we hash the hash to generate a new code
-            enc = abi.encodePacked(h);
         }
-
-        // Set the code for this buyer
-        buyer.code = code;
-
-        return code;
-    }
-
-    /**
-     * @param h keccak256 hash to use
-     * @return The referral code
-     */
-    function _keccak256ToReferralCode(bytes32 h) internal pure returns (bytes3) {
-        bytes3 b;
-        for (uint8 i = 0; i < 3; ++i) {
-            b |= bytes3(h[i]) >> (i * 8);
+        // Early adopter bonus if code invalid and early adoption active
+        else {
+            if (isEarlyAdoptionActive()) {
+                _wallets[beneficiary].earlyAdoption(zapp);
+            }
         }
-        return b;
-    }
-
-    /**
-     * Calculate the sum of the buyer's referred purchases
-     * @param addr address of the buyer
-     * @return The sum
-     */
-    function _calculateBuyerReferralSum(address addr) internal view returns (uint256) {
-        Buyer storage buyer = _buyers[addr];
-        uint256[] storage referrals = buyer.referrals;
-        uint256 sum = 0;
-        for (uint8 i = 0; i < referrals.length; ++i) {
-            sum = sum.add(referrals[i]);
-        }
-        return sum;
     }
 
 }
