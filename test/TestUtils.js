@@ -1,3 +1,4 @@
+// Source: https://medium.com/fluidity/standing-the-time-of-test-b906fcc374a9
 advanceTime = (time) => {
     return new Promise((resolve, reject) => {
         web3.currentProvider.send({
@@ -20,8 +21,7 @@ advanceBlock = () => {
             id: new Date().getTime()
         }, (err, result) => {
             if (err) return reject(err);
-            const newBlockHash = web3.eth.getBlock('latest').hash;
-            return resolve(newBlockHash);
+            return resolve(web3.eth.getBlock('latest'));
         });
     });
 }
@@ -59,10 +59,23 @@ advanceTimeAndBlock = async (time) => {
     return Promise.resolve(web3.eth.getBlock('latest'));
 }
 
+balanceOf = async (account) => {
+    return Promise.resolve(web3.eth.getBalance(account));
+}
+
+toDecimal = (bn, decimals) => {
+    bn = bn.toString();
+    bn = bn.padStart(decimals, "0");
+    bn = `${bn.slice(0, bn.length - decimals)}.${bn.slice(bn.length - decimals, decimals)}`;
+    return parseFloat(bn);
+}
+
 module.exports = {
     advanceTime,
     advanceBlock,
     advanceTimeAndBlock,
     takeSnapshot,
-    revertToSnapShot
+    revertToSnapShot,
+    balanceOf,
+    toDecimal
 }

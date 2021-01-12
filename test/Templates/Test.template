@@ -1,0 +1,28 @@
+const assert = require("assert");
+const Utils = require("./TestUtils.js");
+const Exceptions = require ("./Exceptions.js");
+const { e6, e8, e18, createContract } = require("./Common.js");
+
+contract("Name", function(accounts) {
+
+    let contract, snapshotId, result, code;
+
+    // Startup
+    before(async function() {
+        contract = await createContract();
+        snapshotId = (await Utils.takeSnapshot())["result"];
+        await Utils.advanceBlock();
+    });
+    // Cleanup
+    after(async function() {
+        await Utils.revertToSnapShot(snapshotId);
+    });
+
+    // Tests
+    describe("Test", function() {
+        it("Action", async function() {
+
+        });
+    });
+    
+});

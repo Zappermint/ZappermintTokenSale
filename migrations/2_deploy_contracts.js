@@ -13,7 +13,7 @@ module.exports = async function (deployer, network, accounts) {
         ethPrice, zappPrice, 
         referrerMin, refereeMin, referralBonus, rankRewards, 
         earlyAdoptionEndTime, earlyAdoptionBonus,
-        maxHunters,
+        maxHunters, registerBonus,
         aggregator;
 
     // Settings for deployment on Mainnet
@@ -22,7 +22,7 @@ module.exports = async function (deployer, network, accounts) {
     claimTime               = 1615744800; // Mar 14, 2021, 06:00:00PM UTC 
     softCap                 = "6000000"+e18; // 6M ZAPP
     hardCap                 = "120000000"+e18; // 120M ZAPP
-    ethPrice                = "1300"+e8; // 1300 USD -> Rate 26000 ZAPP / ETH
+    ethPrice                = "1100"+e8; // 1300 USD -> Rate 22000 ZAPP / ETH
     zappPrice               = "5"+e6; // 0.05 USD
     referrerMin             = "2000"+e18; // 2K ZAPP
     refereeMin              = "0"+e18; // 0 ZAPP
@@ -31,6 +31,7 @@ module.exports = async function (deployer, network, accounts) {
     earlyAdoptionEndTime    = openingTime + 259200; // 3 days
     earlyAdoptionBonus      = "5"+e8; // 5%
     maxHunters              = "100"; // 100
+    registerBonus           = "400"+e18; // 400 ZAPP
     aggregator              = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"; // ChainLink
 
     // Overrides for Testnet
@@ -51,18 +52,18 @@ module.exports = async function (deployer, network, accounts) {
             claimTime               = closingTime + 1800; 
             softCap                 = "183600"+e18; 
             hardCap                 = "3672000"+e18; 
-            earlyAdoptionEndTime    = openingTime + 600; 
+            earlyAdoptionEndTime    = openingTime + 3600; 
             maxHunters              = "3";
             aggregator              = "0x8A753747A1Fa494EC906cE90E9f37563A8AF630e";
             break;
         case "goerli":
-            openingTime             = Date.now() / 1000 + 660; 
-            closingTime             = openingTime + 172800; 
-            claimTime               = closingTime + 1800; 
-            softCap                 = "183600"+e18; 
-            hardCap                 = "3672000"+e18; 
-            earlyAdoptionEndTime    = openingTime + 86400; 
-            maxHunters              = "3";
+            openingTime             = Date.now() / 1000 + 300; 
+            closingTime             = openingTime + 2700; 
+            claimTime               = closingTime + 900; 
+            softCap                 = "22000"+e18; 
+            hardCap                 = "440000"+e18; 
+            earlyAdoptionEndTime    = openingTime + 900; 
+            maxHunters              = "1";
             aggregator              = "0x0000000000000000000000000000000000000000";
             break;
     }
@@ -72,7 +73,7 @@ module.exports = async function (deployer, network, accounts) {
     claimTime = claimTime.toFixed();
     earlyAdoptionEndTime = earlyAdoptionEndTime.toFixed();
 
-    await deployer.deploy(ZappermintTokenSale, 
+    await deployer.deploy(ZappermintTokenSale, {
         openingTime, 
         closingTime, 
         claimTime,
@@ -87,47 +88,10 @@ module.exports = async function (deployer, network, accounts) {
         earlyAdoptionEndTime,
         earlyAdoptionBonus,
         maxHunters,
+        registerBonus,
         aggregator
-    );
+    });
     let contract = await ZappermintTokenSale.deployed();
-
-    // Constructor ABI
-    let ctorTypes = [
-        "uint256",      // openingTime
-        "uint256",      // closingTime
-        "uint256",      // claimTime
-        "uint256",      // softCap
-        "uint256",      // hardCap
-        "uint256",      // ethPrice
-        "uint256",      // zappPrice
-        "uint256",      // referrerMin
-        "uint256",      // refereeMin
-        "uint256",      // referralBonus
-        "uint256[5]",   // rankRewards
-        "uint256",      // earlyAdoptionEndTime
-        "uint256",      // earlyAdoptionBonus
-        "uint256",      // maxHunters
-        "address"       // aggregator
-    ];
-    let ctorValues = [
-        openingTime, 
-        closingTime, 
-        claimTime,
-        softCap, 
-        hardCap,
-        ethPrice,
-        zappPrice,
-        referrerMin,
-        refereeMin,
-        referralBonus,
-        rankRewards,
-        earlyAdoptionEndTime,
-        earlyAdoptionBonus,
-        maxHunters,
-        aggregator
-    ];
-    let ctorABI = web3.eth.abi.encodeParameters(ctorTypes, ctorValues);
-    ctorABI = ctorABI.substr(2, ctorABI.length - 2);
 
     // Function ABIs
     let funcABI = '';
@@ -141,9 +105,10 @@ module.exports = async function (deployer, network, accounts) {
     console.log(`${ZappermintTokenSale.contractName}`);
     console.log(`Addr : ${contract.address}`);
     console.log(`Net  : ${network}`);
-    console.log(`Open : ${openingTime}`);
-    console.log(`Close: ${closingTime}`);
-    console.log(`ABI  : ${ctorABI}`);
+    console.log(`Open : ${openingTime} (${new Date(parseInt(openingTime) * 1000)})`);
+    console.log(`Early: ${earlyAdoptionEndTime} (${new Date(parseInt(earlyAdoptionEndTime) * 1000)})`);
+    console.log(`Close: ${closingTime} (${new Date(parseInt(closingTime) * 1000)})`);
+    console.log(`Claim: ${claimTime} (${new Date(parseInt(claimTime) * 1000)})`);
     console.log('```');
     console.log(funcABI);
 };

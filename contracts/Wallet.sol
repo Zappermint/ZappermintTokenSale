@@ -176,9 +176,11 @@ library WalletInterface {
      * Register as hunter
      * @param self the wallet
      */
-    function register(Wallet storage self, mapping(bytes3 => address) storage codes) internal {
+    function register(Wallet storage self, uint256 reward, mapping(bytes3 => address) storage codes) internal {
         // Become hunter
         self.isHunter = true;
+        // Set initial bonus to the register reward
+        self.hunter.bonus = reward;
         // Become referrer
         self.isReferrer = true;
         // Generate referral code
@@ -186,16 +188,17 @@ library WalletInterface {
     }
 
     /**
-     * Set hunter verification and rewards
+     * Verify hunter and add his rewards
      * @param self the wallet
-     * @param verified whether the hunter is verified
      * @param bonus hunted bounties
+     * NOTE Also becomes a hunter, even if unregistered
      */
-    function hunt(Wallet storage self, bool verified, uint256 bonus) internal {
-        // Only on hunters
-        if (!self.isHunter) return;
-        self.hunter.verified = verified;
-        self.hunter.bonus = bonus;
+    function verify(Wallet storage self, uint256 bonus) internal {
+        // Become hunter
+        self.isHunter = true;
+        // Set data
+        self.hunter.verified = true;
+        self.hunter.bonus = self.hunter.bonus.add(bonus);
     }
 
     /**
