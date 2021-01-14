@@ -2,5 +2,6 @@
 Smart Contract for the Zappermint Token Sale
 
 ### Deployed on 
-- [Goerli Testnet](https://goerli.etherscan.io/address/0x40A44537B812eFE6dBB48D62428a816519d06805)
-- [Rinkeby Testnet](https://rinkeby.etherscan.io/address/0xd6865c9e02fd087ba036621b161aa94b2072949e)
+- [Mainnet](https://etherscan.io/address/0x6ab7FAb2Af6a64bD28AaD892565A63690c8A4ba9)
+- [Goerli Testnet](https://goerli.etherscan.io/address/0x6d969a5f0332C89469d89cC9dD1A635975F663DE)
+- [Rinkeby Testnet](https://rinkeby.etherscan.io/address/0x3b76C941b8A13f04A11cFc5A8c5bd6799dB83ff9)
