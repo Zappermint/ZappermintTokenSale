@@ -50,8 +50,8 @@ contract("Reach Hard Cap", function(accounts) {
             assert.strictEqual(result.toString(), "250000"+e18, "Bought ZAPP");
         });
 
-        it("Refunded 7.5 ETH", async function () {
-            assert.strictEqual((await Utils.balanceOf(buyer)) > bal);
+        it("Refund exceeding", async function () {
+            assert.strictEqual(Utils.toDecimal(await Utils.balanceOf(buyer), 18) > Utils.toDecimal(bal, 18) - 20, true, "Refund exceeding");
         });
     });
     
@@ -105,13 +105,35 @@ contract("Reach Hard Cap", function(accounts) {
         it("ETH", async function() {
             let bal = await Utils.balanceOf(owner);
             result = await contract.claimETH(owner, {from: owner});
-            assert.strictEqual((await Utils.balanceOf(owner)) > bal, true, "Claim ETH");
+            assert.strictEqual(Utils.toDecimal(await Utils.balanceOf(owner), 18) > Utils.toDecimal(bal, 18), true, "Claim ETH");
         });
 
         it("ZAPP", async function() {
             result = await contract.claimZAPP({from: zappContract});
             result = await contract.hasWalletClaimed(buyer);
             assert.strictEqual(result, true, "Not claimed");
+        });
+    });
+
+    describe("Totals", function() {
+        it("Early Adopter", async function() {
+            result = await contract.getTotalEarlyAdoptionZAPP();
+            assert.strictEqual(result.toString(), "250000"+e18, "Early Adopter");
+        });
+
+        it("Without Code", async function() {
+            result = await contract.getTotalWithoutCodeZAPP();
+            assert.strictEqual(result.toString(), "250000"+e18, "Without Code");
+        });
+
+        it("Referred", async function() {
+            result = await contract.getTotalReferredZAPP();
+            assert.strictEqual(result.toString(), "0", "Referred");
+        });
+
+        it("Hunter Referred", async function() {
+            result = await contract.getTotalHunterReferredZAPP();
+            assert.strictEqual(result.toString(), "0", "Hunter Referred");
         });
     });
     

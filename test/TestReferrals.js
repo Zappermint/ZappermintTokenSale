@@ -3,10 +3,10 @@ const Utils = require("./TestUtils.js");
 const Exceptions = require ("./Exceptions.js");
 const { e6, e8, e18, createContract } = require("./Common.js");
 
-contract("Name", function(accounts) {
+contract("Referrals", function(accounts) {
 
     let contract, snapshotId, result, code;
-    let owner = accounts[0];
+    let owner = accounts[0], referrer1 = accounts[1], referrer2 = accounts[2], buyer = accounts[3];
 
     // Startup
     before(async function() {

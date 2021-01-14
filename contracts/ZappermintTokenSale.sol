@@ -72,6 +72,15 @@ contract ZappermintTokenSale {
     }
 
     /**
+     * Only allow function with this modifier to run while the Token Sale is not closed
+     * NOTE The difference with whileOpen is that this returns true also before Token Sale opens
+     */
+    modifier whileNotClosed {
+        require(!isClosed(), "Token Sale closed");
+        _;
+    }
+
+    /**
      * Only allow function with this modifier to run while the claims are open
      */
     modifier whileClaimable {
@@ -246,6 +255,13 @@ contract ZappermintTokenSale {
      */
     function isEarlyAdoptionActive() public view returns (bool) {
         return block.timestamp <= _earlyAdoptionEndTime;
+    }
+
+    /**
+     * @return Percentage of purchase to receive as bonus during early adoption (8 decimals)
+     */
+    function getEarlyAdoptionBonus() public view returns (uint256) {
+        return _earlyAdoptionBonus;
     }
 
     /**
@@ -468,7 +484,7 @@ contract ZappermintTokenSale {
      */
     function getEarlyAdopterBonus(address addr) public view returns (uint256) {
         if (hasWalletClaimed(addr)) return 0;
-        return _wallets[addr].getEarlyAdopterBonus(_referralBonus);
+        return _wallets[addr].getEarlyAdopterBonus(_earlyAdoptionBonus);
     }
 
     /**
@@ -527,16 +543,16 @@ contract ZappermintTokenSale {
         
         // Add hunter bonus when verified
         if (verified) {
-            total.add(getHunterBonus(addr));
+            total = total.add(getHunterBonus(addr));
         } 
         // Also add hunter bonus when not claimable yet
         else if (!claimable) {
-            total.add(getHunterBonus(addr));
+            total = total.add(getHunterBonus(addr));
         }
 
         // Add rank reward when claimable
         if (claimable) {
-            total.add(getReferrerRankReward(addr));
+            total = total.add(getReferrerRankReward(addr));
         } 
         
         return total;
@@ -628,6 +644,51 @@ contract ZappermintTokenSale {
             }
         }
         return top;
+    }
+
+    /**
+     * @return Total amount of ZAPP that has been bought during Early Adoption
+     */
+    function getTotalEarlyAdoptionZAPP() public view returns (uint256) {
+        uint256 total;
+        for (uint256 i = 0; i < _walletKeys.length; ++i) {
+            total = total.add(_wallets[_walletKeys[i]].earlyAdopter.zapp);
+        }
+        return total;
+    }
+
+    /**
+     * @return Total amount of ZAPP that has been bought without referral code
+     */
+    function getTotalWithoutCodeZAPP() public view returns (uint256) {
+        uint256 total;
+        for (uint256 i = 0; i < _walletKeys.length; ++i) {
+            total = total.add(_wallets[_walletKeys[i]].buyer.zapp)
+                         .sub(_wallets[_walletKeys[i]].referee.zapp);
+        }
+        return total;
+    }
+
+    /**
+     * @return Total amount of ZAPP that has been bought with referral code
+     */
+    function getTotalReferredZAPP() public view returns (uint256) {
+        uint256 total;
+        for (uint256 i = 0; i < _walletKeys.length; ++i) {
+            total = total.add(_wallets[_walletKeys[i]].referee.zapp);
+        }
+        return total;
+    }
+
+    /**
+     * @return Total amount of ZAPP that has been bought with Bounty Hunter referral code
+     */
+    function getTotalHunterReferredZAPP() public view returns (uint256) {
+        uint256 total;
+        for (uint256 i = 0; i < _registeredHunters.length; ++i) {
+            total = total.add(_wallets[_registeredHunters[i]].calculateReferredAmount(_referrerMin, false));
+        } 
+        return total;
     }
 
     /**
@@ -748,7 +809,8 @@ contract ZappermintTokenSale {
      * Register as Bounty Hunter
      * NOTE This generates a code for the address, disregarding the bought zapp amount
      */
-    function registerHunter() public beforeEnd {
+    function registerHunter() public whileNotClosed {
+        require(!isHunterRegistered(msg.sender), "Already a Bounty Hunter");
         require(canRegister(), "Maximum amount of Bounty Hunters has been reached");
         
         // Register without purchase

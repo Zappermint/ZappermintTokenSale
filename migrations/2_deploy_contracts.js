@@ -26,11 +26,11 @@ module.exports = async function (deployer, network, accounts) {
     zappPrice               = "5"+e6; // 0.05 USD
     referrerMin             = "2000"+e18; // 2K ZAPP
     refereeMin              = "0"+e18; // 0 ZAPP
-    referralBonus           = "5"+e8; // 5%
+    referralBonus           = "5"+e6; // 5%
     rankRewards             = ["20000"+e18, "12000"+e18, "8000"+e18, "6000"+e18, "4000"+e18]; // 20K,12K,8K,6K,4K
     earlyAdoptionEndTime    = openingTime + 259200; // 3 days
-    earlyAdoptionBonus      = "5"+e8; // 5%
-    maxHunters              = "100"; // 100
+    earlyAdoptionBonus      = "5"+e6; // 5%
+    maxHunters              = "400"; // 400
     registerBonus           = "400"+e18; // 400 ZAPP
     aggregator              = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419"; // ChainLink
 
@@ -58,12 +58,12 @@ module.exports = async function (deployer, network, accounts) {
             break;
         case "goerli":
             openingTime             = Date.now() / 1000 + 300; 
-            closingTime             = openingTime + 2700; 
-            claimTime               = closingTime + 900; 
+            closingTime             = openingTime + 360; 
+            claimTime               = closingTime + 60; 
             softCap                 = "22000"+e18; 
             hardCap                 = "440000"+e18; 
-            earlyAdoptionEndTime    = openingTime + 900; 
-            maxHunters              = "1";
+            earlyAdoptionEndTime    = openingTime + 180; 
+            maxHunters              = "2";
             aggregator              = "0x0000000000000000000000000000000000000000";
             break;
     }

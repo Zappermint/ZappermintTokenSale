@@ -12,7 +12,7 @@ library Helpers {
      * @return The percentage of the number
      */
     function percentageOf(uint256 number, uint256 percent) internal pure returns (uint256) {
-        return number.mul(percent).div(10000000000);
+        return number.mul(percent).div(100000000);
     }
 
     /**

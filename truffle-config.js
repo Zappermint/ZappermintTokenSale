@@ -1,4 +1,4 @@
-const { projectId, mnemonic } = require('./secrets.json');
+const { projectId, mnemonic, key, address } = require('./secrets.json');
 const HDWalletProvider = require('@truffle/hdwallet-provider');
 
 module.exports = {
@@ -21,7 +21,7 @@ module.exports = {
       skipDryRun: true,
     },
     goerli: {
-      provider: () => new HDWalletProvider(mnemonic, `https://goerli.infura.io/v3/${projectId}`),
+      provider: () => new HDWalletProvider(key, `https://goerli.infura.io/v3/${projectId}`),
       network_id: 5,
       gas: 5000000,
       gasPrice: 10000000000,
@@ -29,15 +29,15 @@ module.exports = {
       timeoutBlocks: 200,
       skipDryRun: true,
     },
-    // main: { // TODO: Use official Zappermint account mnemonic
-    //   provider: () => new HDWalletProvider(mnemonic, `https://infura.io/v3/${projectId}`),
-    //   network_id: 1,
-    //   gas: 5000000,
-    //   gasPrice: 89000000000,
-    //   confirmations: 2,
-    //   timeoutBlocks: 200,
-    //   skipDryRun: true,
-    // }
+    main: { 
+      provider: () => new HDWalletProvider(key, `https://mainnet.infura.io/v3/${projectId}`),
+      network_id: 1,
+      gas: 5000000,
+      gasPrice: 44000000000,
+      confirmations: 2,
+      timeoutBlocks: 200,
+      skipDryRun: true,
+    }
   },
   mocha: {
     // timeout: 100000

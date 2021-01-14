@@ -25,19 +25,8 @@ contract("Below Hard Cap", function(accounts) {
 
     // Tests
     describe("Open sale", function () {
-        it("Sale closed", async function() {
-            await Utils.advanceBlock();
-            result = await contract.isOpen();
-            assert.strictEqual(result, false, "Token Sale is open");
-        });
-
         it("Jump in time", async function() {
             await Utils.advanceTimeAndBlock(31);
-        });
-
-        it("Sale open", async function() {
-            result = await contract.isOpen();
-            assert.strictEqual(result, true, "Token Sale not open");
         });
     });
 
@@ -139,4 +128,26 @@ contract("Below Hard Cap", function(accounts) {
         });
     });
     
+    describe("Totals", function() {
+        it("Early Adopter", async function() {
+            result = await contract.getTotalEarlyAdoptionZAPP();
+            assert.strictEqual(result.toString(), "2500"+e18, "Early Adopter");
+        });
+
+        it("Without Code", async function() {
+            result = await contract.getTotalWithoutCodeZAPP();
+            assert.strictEqual(result.toString(), "2500"+e18, "Without Code");
+        });
+
+        it("Referred", async function() {
+            result = await contract.getTotalReferredZAPP();
+            assert.strictEqual(result.toString(), "0", "Referred");
+        });
+
+        it("Hunter Referred", async function() {
+            result = await contract.getTotalHunterReferredZAPP();
+            assert.strictEqual(result.toString(), "0", "Hunter Referred");
+        });
+    });
+
 });
