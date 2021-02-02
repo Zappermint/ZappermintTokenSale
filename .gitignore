@@ -2,6 +2,9 @@
 # https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/.gitignore
 #
 
+.git
+.vscode
+
 *.swp
 *.swo
 
